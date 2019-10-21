@@ -2,6 +2,6 @@
 
 Based on https://www.kaggle.com/iashreya/moviereviewsdataset
 
-Script to evaluate reviews of movie according to positive or negative polarity, using Naive Bayes, MultinomialNB and BernoulliNB.
+Script to evaluate reviews about movies, classifying them with positive or negative polarities, using Naive Bayes, MultinomialNB and BernoulliNB.
 
 Libraries: nltk,sklearn
