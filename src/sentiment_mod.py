@@ -1,96 +1,70 @@
-import random
+import numpy as np
 import nltk
+import random
+import os
 from nltk.tokenize import word_tokenize
-from nltk.classify.scikitlearn import SklearnClassifier
-from sklearn.naive_bayes import MultinomialNB, BernoulliNB
-from nltk.classify import ClassifierI
-from statistics import mode
 import string
 from nltk.corpus import stopwords
-import os
-#nltk.download('stopwords')
-#nltk.download('punkt')
-#nltk.download('averaged_perceptron_tagger')
+from nltk.stem import WordNetLemmatizer
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn import svm
+from sklearn.metrics import accuracy_score
+#nltk.download('wordnet')
 
 # Context Manager to open movie reviews .txt files
-with open("../txt/positive.txt","rb") as obj:
-    short_pos = str(obj.read())
-with open("../txt/negative.txt","rb") as obj:
-    short_neg = str(obj.read())
-
-#cleaning step
-short_pos=short_pos.replace('\\r','')
-short_neg=short_neg.replace('\\r','')
+with open("txt/positive.txt","rb") as obj:
+    short_pos = str(obj.read()).lower()
+with open("txt/negative.txt","rb") as obj:
+    short_neg = str(obj.read()).lower()
 
 allowed_word_types=["J"] #adjectives
-reviews_words=[]
 stopw = set(stopwords.words('english'))
 exclude=stopw.union(string.punctuation)
+word_Lemmatized = WordNetLemmatizer()
 documents=[]
 
 def segment_words(document,typesent):
-    for p in document.split('\\n'):
-        documents.append((p,typesent))   
+    document=document.replace("\\r","")
+    for p in document.split("\\n"):
+        reviews_words=[]
+        p=p.replace("\\'","")  
         words=word_tokenize(p)
         pos_t=nltk.pos_tag(words)
         for w in pos_t:
             if w[1][0] in allowed_word_types: #first letter has to be J
                 if w[0] not in exclude and w[0].isalpha():
-                    reviews_words.append(w[0].lower())  
+                    reviews_words.append(word_Lemmatized.lemmatize(w[0]))
+        documents.append((" ".join(reviews_words),typesent))
          
 segment_words(short_pos,"positive")
 segment_words(short_neg,"negative")
 
-#to train against a certain number of words:
-reviews_words = nltk.FreqDist(reviews_words)
-#filter words with at least 5 appearances in text
-word_features=list(filter(lambda x: x[1]>=5,reviews_words.items()))
+random.Random(4).shuffle(documents)
+words, labels = map(list, zip(*documents)) 
 
-def find_features(document):
-    words=word_tokenize(document)
-    features={}
-    for w in word_features: 
-        features[w]=(w in words)  
-    return features
+X_train, X_test, y_train, y_test = train_test_split(words, labels, test_size=0.33, random_state=42)
 
-featuresets= [(find_features(rev), category) for (rev, category) in documents]
+Encoder = LabelEncoder()
+y_train = Encoder.fit_transform(y_train)
+y_test = Encoder.fit_transform(y_test)
 
-random.seed(100)
-random.shuffle(featuresets)
+Tfidf_vect = TfidfVectorizer(max_features=5000)
+Tfidf_vect.fit(words)
+X_train_Tfidf = Tfidf_vect.transform(X_train)
+X_test_Tfidf = Tfidf_vect.transform(X_test)
 
-training_set = featuresets[:8000]
-testing_set =  featuresets[8000:]
+#print(Tfidf_vect.vocabulary_)
 
-classifier=nltk.NaiveBayesClassifier.train(training_set)
-MNBclassifier=SklearnClassifier(MultinomialNB()).train(training_set)
-Bernoulli_classifier=SklearnClassifier(BernoulliNB()).train(training_set)
+# Classifier - Algorithm - SVM
+SVM = svm.SVC(C=1.0, kernel='linear', degree=3, gamma='auto')
+SVM.fit(X_train_Tfidf,y_train)
+predictions_SVM = SVM.predict(X_test_Tfidf)
 
-#combining algorithms with a vote:
-class voting_process(ClassifierI):
-    
-    def __init__(self,*classifiers): 
-        self._classifiers=classifiers    
-    
-    def classify(self,features):
-        votes=[]
-        for c in self._classifiers:
-            v=c.classify(features)
-            votes.append(v)
-        return mode(votes)
-    
-    def confidence(self,features):
-        votes=[]
-        for c in self._classifiers:
-            v=c.classify(features)
-            votes.append(v)
-        
-        choice_votes=votes.count(mode(votes))
-        conf=choice_votes/len(votes)    
-        return conf     
+# accuracy_score
+print("SVM Accuracy Score -> ",accuracy_score(predictions_SVM, y_test)*100)
 
-voted_classifier=voting_process(classifier,MNBclassifier,Bernoulli_classifier)
-
-def sentiment(text):
-    feats=find_features(text)
-    return voted_classifier.classify(feats),(voted_classifier.confidence(feats)*100)
+a=Tfidf_vect.transform(["amaizing wonderful brilliant","terrible disgusting bad"])
+print(Encoder.inverse_transform(SVM.predict(a)))
 
